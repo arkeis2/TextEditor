@@ -20,6 +20,7 @@ public:
     void clearBuffer();
     bool undoLast();
     void displayBuffer();
+    void insertLine(string line, int pointerLine);
 
 private:
     size_t dequeSize;

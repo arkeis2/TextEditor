@@ -20,6 +20,7 @@ enum CmdCode {
   UNDO,
   DISPLAY,
   STARTAPPEND,
+  STARTINSERT,
   NOOP
 };
 
@@ -54,5 +55,4 @@ class TextEditor {
 
     int getNumArg(string cmd);
     void init_readline();
-
 };

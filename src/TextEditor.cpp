@@ -7,6 +7,7 @@
 #include <deque>
 #include <map>
 #include <regex>
+#include<format>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "../include/MemRep.hpp"
@@ -17,10 +18,10 @@ using namespace std;
 
 static TextEditor* instance = nullptr;
 
-map<State, const char *> InputMap = {
-  {State::APPEND, "(append) "},
-  {State::INSERT, "(insert %i ) "},
-  {State::COMMAND, "(cmd) "}
+map<State,  function<string(int)>> InputMap = {
+  {State::APPEND, [](int line) {return "(append at line " + to_string(line) + ") ";}},
+  {State::INSERT, [](int line) {return "(insert at line " + to_string(line) + ") ";}},
+  {State::COMMAND, [](int x) {(void)x; return "(cmd) ";}}
 };
 
 map<string, CmdCode> CmdCodeMap = {
@@ -29,14 +30,19 @@ map<string, CmdCode> CmdCodeMap = {
   {"c", CmdCode::CLEAR},
   {"u", CmdCode::UNDO},
   {"d", CmdCode::DISPLAY},
-  {"a", CmdCode::STARTAPPEND}
+  {"a", CmdCode::STARTAPPEND},
+  {"i", CmdCode::STARTINSERT}
 };
 
 CmdCode GetCmdCode(string CmdCode) {
   static const std::regex regexUndo(R"(^u(?:\s+([0-9]+))?$)");
+  static const std::regex regexInsert(R"(^i(?:\s+([0-9]+))?$)");
   smatch match;
   if (regex_match(CmdCode, match, regexUndo)) {
     return CmdCode::UNDO;
+  }
+  if (regex_match(CmdCode, match, regexInsert)) {
+    return CmdCode::STARTINSERT;
   }
   if (CmdCodeMap.count(CmdCode)) return CmdCodeMap[CmdCode];
   return CmdCode::NOOP;
@@ -65,6 +71,7 @@ void TextEditor::init_readline() {
 TextEditor::TextEditor(string fname, size_t undoDequeSize) {
   fstream *fdr = new fstream(fname);
   fileRep = new MemRep(fdr, undoDequeSize);
+  pointerLine = fileRep->buffer.size();
   fdr->close();
   filename = fname;
   state = State::APPEND;
@@ -75,8 +82,11 @@ void TextEditor::inputLoop() {
 
   init_readline();
   string line;
+  int newPointerLine;
   while (true) {
-    char* input = readline(InputMap[state]);
+    char textInput[64];
+    strcpy(textInput, (InputMap[state](pointerLine)).c_str()); 
+    char* input = readline(textInput);
     if (!input) break; //EOF
 
     string line(input);
@@ -109,6 +119,7 @@ void TextEditor::inputLoop() {
         // extract number of lines to undo if provided
         {
           int numLinesToUndo = getNumArg(cmd);
+          if (numLinesToUndo == -1) numLinesToUndo = 1;
           int count = 0;
           for (int i = 0; i < numLinesToUndo; i++) {
             if (!fileRep->undoLast()) {
@@ -118,6 +129,7 @@ void TextEditor::inputLoop() {
             count++;
           }
           cout << "Undid " << count << " action(s)" << endl;
+          pointerLine -= count;
         }
         break;
         
@@ -129,8 +141,17 @@ void TextEditor::inputLoop() {
         state = State::APPEND;
         break;
 
-      case DISPLAY:
+      case CmdCode::DISPLAY:
         fileRep->displayBuffer();
+        break;
+
+      case CmdCode::STARTINSERT:
+        newPointerLine = getNumArg(cmd);
+        if (newPointerLine != -1) pointerLine = newPointerLine;
+        if ((size_t) newPointerLine > fileRep->buffer.size() + 1) {
+          pointerLine = fileRep->buffer.size() + 1;
+        }
+        state = State::INSERT;
         break;
       
       default:
@@ -139,6 +160,11 @@ void TextEditor::inputLoop() {
     }
     else if (state == State::APPEND) {
       fileRep->appendLine(line);
+      pointerLine ++;
+    }
+    else if (state == State::INSERT) {
+      fileRep->insertLine(line, pointerLine);
+      pointerLine++;
     }
   }
 }
@@ -146,13 +172,13 @@ void TextEditor::inputLoop() {
 TextEditor::~TextEditor(){}
 
 int TextEditor::getNumArg(string cmd) {
-  static const std::regex regexUndo(R"(^u(?:\s+([0-9]+))?$)");
-  int numLinesToUndo = 1; // default to 1 line
+  static const std::regex regexUndo(R"(^(u|i)(?:\s+([0-9]+))?$)");
+  int numArg = -1; // default to 1 line
   smatch match;
   if (regex_match(cmd, match, regexUndo)) {
-    if (match[1].matched) {
-      numLinesToUndo = stoi(match[1].str());
+    if (match[2].matched) {
+      numArg = stoi(match[2].str());
     }
   }
-  return numLinesToUndo;
+  return numArg;
 }

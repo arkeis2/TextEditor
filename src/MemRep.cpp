@@ -21,6 +21,12 @@ void MemRep::appendLine(string line) {
   }
   indexDeque.push_back(buffer.size()-1);
 }
+
+void MemRep::insertLine(string line, int pointerLine) {
+  if (!line.length()) line = "\n";
+  buffer.insert(buffer.begin() + pointerLine, line);
+} 
+
 void MemRep::clearBuffer() {
   buffer.clear();
 }
